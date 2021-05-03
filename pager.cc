@@ -3,6 +3,19 @@
 // May 2, 2021
 
 #include "vm_pager.h"
+#include <queue>
+#include <iostream>
+
+using namespace std;
+
+struct Process {
+	pid_t pid;
+	page_table_t* process_ptbr;
+	page_table_t process_pgtable;
+};
+
+queue<Process*> all_processes;
+Process* curr_process;
 
 /*
  * vm_init
@@ -12,7 +25,7 @@
  * disk blocks in the raw disk.
  */
 void vm_init(unsigned memory_pages, unsigned disk_blocks) {
-  // TODO
+  
 }
 
 /*
@@ -22,7 +35,13 @@ void vm_init(unsigned memory_pages, unsigned disk_blocks) {
  * The new process will only run when it's switched to via vm_switch.
  */
 void vm_create(pid_t pid) {
-  // TODO
+  
+	Process* new_process = new Process;
+	new_process->pid = pid;
+	cerr << "New process pid is " << new_process->pid << endl;
+
+
+
 }
 
 /*
