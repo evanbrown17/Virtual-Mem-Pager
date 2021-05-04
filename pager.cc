@@ -5,6 +5,7 @@
 #include "vm_pager.h"
 #include <queue>
 #include <iostream>
+#include <list>
 
 using namespace std;
 
@@ -12,10 +13,16 @@ struct Process {
 	pid_t pid;
 	page_table_t* process_ptbr;
 	page_table_t process_pgtable;
+	uintptr_t validceiling;
+	int pages;
+	
 };
 
-queue<Process*> all_processes;
+list<Process*> all_processes;
 Process* curr_process;
+
+unsigned mem_pages;
+unsigned blocks;
 
 /*
  * vm_init
@@ -25,7 +32,8 @@ Process* curr_process;
  * disk blocks in the raw disk.
  */
 void vm_init(unsigned memory_pages, unsigned disk_blocks) {
-  
+ 	mem_pages = memory_pages;
+	blocks = disk_blocks;
 }
 
 /*
@@ -38,7 +46,10 @@ void vm_create(pid_t pid) {
   
 	Process* new_process = new Process;
 	new_process->pid = pid;
+	new_process->validceiling = (uintptr_t)  VM_ARENA_BASEADDR;
+	new_process->pages = 0;
 	cerr << "New process pid is " << new_process->pid << endl;
+	all_processes.push_back(new_process);
 
 
 
@@ -49,9 +60,18 @@ void vm_create(pid_t pid) {
  *
  * Notifies the pager that the kernel is switching to a new process with the
  * given pid.
- */
+*/
 void vm_switch(pid_t pid) {
-  // TODO
+ 	for (Process* p : all_processes) {
+		if (p->pid == pid) {
+			curr_process = p;
+			page_table_base_register = curr_process->process_ptbr; //set PTBR to point to the current page table
+
+		}	
+	}
+	cerr << "There is no process with the given pid: " << pid << endl;
+	
+		
 }
 
 /*
@@ -89,8 +109,21 @@ void vm_destroy() {
  * view to the application. Returns null if the new page cannot be allocated.
  */
 void* vm_extend() {
-  // TODO
-  return nullptr;
+	
+	if (curr_process->validceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE){ //check to make sure we haven't run out of arena
+		page_table_base_register->ptes[curr_process->pages].read_enable = 1;
+		page_table_base_register->ptes[curr_process->pages].write_enable = 1; 
+		
+		//need to actually interact with the physical memory/disk
+		
+		
+		curr_process->validceiling += (uintptr_t) VM_PAGESIZE;
+		curr_process->pages += 1;
+		return (void*) curr_process->validceiling;
+
+	} else {
+		return nullptr;
+	}
 }
 
 /*
