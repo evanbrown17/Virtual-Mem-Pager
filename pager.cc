@@ -6,6 +6,8 @@
 #include <queue>
 #include <iostream>
 #include <list>
+#include <map>
+
 
 using namespace std;
 
@@ -15,6 +17,8 @@ struct Process {
 	page_table_t process_pgtable;
 	uintptr_t validceiling;
 	int pages;
+	map<unsigned, unsigned> blockMap;
+
 	
 };
 
@@ -23,6 +27,7 @@ Process* curr_process;
 
 unsigned mem_pages;
 unsigned blocks;
+unsigned blocksAssigned;
 
 /*
  * vm_init
@@ -109,13 +114,14 @@ void vm_destroy() {
  * view to the application. Returns null if the new page cannot be allocated.
  */
 void* vm_extend() {
-	
+		
 	if (curr_process->validceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE){ //check to make sure we haven't run out of arena
 		page_table_base_register->ptes[curr_process->pages].read_enable = 1;
 		page_table_base_register->ptes[curr_process->pages].write_enable = 1; 
 		
 		//need to actually interact with the physical memory/disk
-		
+		//curr_process->blockMap.insert(blocks, page_table_base_register->ptes[curr_process->pages].ppage);
+			
 		
 		curr_process->validceiling += (uintptr_t) VM_PAGESIZE;
 		curr_process->pages += 1;
