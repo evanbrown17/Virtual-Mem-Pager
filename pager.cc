@@ -7,20 +7,30 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <deque>
 
 
 using namespace std;
+
+struct Page {
+	int ref_bit;
+	int dirty_bit;
+	unsigned frame; //physmem location (if any)
+	unsigned block; //disk location
+};
+
 
 struct Process {
 	pid_t pid;
 	page_table_t* process_ptbr;
 	page_table_t process_pgtable;
 	uintptr_t validceiling;
-	int pages;
-	map<unsigned, unsigned> blockMap;
+	list<Page*> pageInfo;
+	
 
 	
 };
+
 
 list<Process*> all_processes;
 Process* curr_process;
@@ -28,6 +38,11 @@ Process* curr_process;
 unsigned mem_pages;
 unsigned blocks;
 unsigned blocksAssigned;
+//unsigned framesAssigned;
+//
+int * framesAssigned;
+
+
 
 /*
  * vm_init
@@ -39,6 +54,13 @@ unsigned blocksAssigned;
 void vm_init(unsigned memory_pages, unsigned disk_blocks) {
  	mem_pages = memory_pages;
 	blocks = disk_blocks;
+	blocksAssigned = 0;
+	framesAssigned = new int [mem_pages]; //says whether the frame is full or not
+	for (unsigned i = 0; i < mem_pages; i++) {
+		framesAssigned[i] = 0;	
+		//all frames initially empty
+
+	}
 }
 
 /*
@@ -52,7 +74,6 @@ void vm_create(pid_t pid) {
 	Process* new_process = new Process;
 	new_process->pid = pid;
 	new_process->validceiling = (uintptr_t)  VM_ARENA_BASEADDR;
-	new_process->pages = 0;
 	cerr << "New process pid is " << new_process->pid << endl;
 	all_processes.push_back(new_process);
 
@@ -115,16 +136,47 @@ void vm_destroy() {
  */
 void* vm_extend() {
 		
-	if (curr_process->validceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE){ //check to make sure we haven't run out of arena
-		page_table_base_register->ptes[curr_process->pages].read_enable = 1;
-		page_table_base_register->ptes[curr_process->pages].write_enable = 1; 
+	if ((curr_process->validceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE) &&
+			blocksAssigned < blocks){ //check to make sure we haven't run out of arena or disk
 		
-		//need to actually interact with the physical memory/disk
-		//curr_process->blockMap.insert(blocks, page_table_base_register->ptes[curr_process->pages].ppage);
+		unsigned nextFrame = mem_pages + 1;
+
+		//find lowest unused frame
+		for (unsigned i = 0; i < mem_pages; i++) {
+			if (framesAssigned[i] == 0) {
+				nextFrame = i;
+				break;
+			}
+		}
+		//if no unused frame, cannot alloc		
+		if (nextFrame > mem_pages) {
+			return nullptr;
+		}
+
+		
+	
+		Page* newPage = new Page;
+		newPage->dirty_bit = 0;
+		newPage->ref_bit = 1;
+		newPage->frame = nextFrame;
+		newPage->block = blocksAssigned;
+		
+		curr_process->pageInfo.push_back(newPage);
+
+		blocksAssigned++; //will probably need more complexity here to write over disk entries that are no longer needed
+
+
+		//set page table entry
+		page_table_base_register->ptes[curr_process->pageInfo.size()].ppage = nextFrame;
+	
+		page_table_base_register->ptes[curr_process->pageInfo.size()].read_enable = 1;
+		page_table_base_register->ptes[curr_process->pageInfo.size()].write_enable = 1; 
+		
+
+		
 			
 		
-		curr_process->validceiling += (uintptr_t) VM_PAGESIZE;
-		curr_process->pages += 1;
+		curr_process->validceiling += (uintptr_t) VM_PAGESIZE; //update which virtual addresses are valid
 		return (void*) curr_process->validceiling;
 
 	} else {
