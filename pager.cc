@@ -9,14 +9,17 @@
 #include <map>
 #include <deque>
 #include <string>
+#include <climits>
 
 
 using namespace std;
 
 struct Page {
-	int page_num;
+	unsigned page_num;
 	int ref_bit;
 	int dirty_bit;
+	bool resident;
+	bool initialized;
 	unsigned frame; //physmem location (if any)
 	unsigned block; //disk location
 };
@@ -35,7 +38,7 @@ struct Process {
 list<Process*> all_processes;
 Process* curr_process;
 
-list<Page*> all_pages
+list<Page*> all_pages;
 
 unsigned mem_pages;
 unsigned frame_counter;
@@ -57,7 +60,7 @@ int total_pages;
  * disk blocks in the raw disk.
  */
 void vm_init(unsigned memory_pages, unsigned disk_blocks) {
-	arena_base = VM_ARENA_BASEADDR;
+	arena_base = (uintptr_t) VM_ARENA_BASEADDR;
 	frame_counter = 0;
  	mem_pages = memory_pages;
 	blocks = disk_blocks;
@@ -81,12 +84,12 @@ void vm_create(pid_t pid) {
   
 	Process* new_process = new Process;
 	new_process->pid = pid;
-	new_process->valid_floor = VM_ARENA_BASEADDR;
-	new_process->valid_ceiling = VM_ARENA_BASEADDR;
+	new_process->valid_floor = (uintptr_t) VM_ARENA_BASEADDR;
+	new_process->valid_ceiling = (uintptr_t) VM_ARENA_BASEADDR;
 
 	new_process->process_pgtable = new page_table_t;
 	new_process->process_ptbr = new_process->process_pgtable;
-	new_process->process_pgtable->ptes = new page_table_entry_t;
+	//new_process->process_pgtable->ptes = new page_table_entry_t;
 	cerr << "New process pid is " << new_process->pid << endl;
 
 	//Need to initialize values in actual page table?
@@ -108,11 +111,23 @@ void vm_switch(pid_t pid) {
 		if (p->pid == pid) {
 			curr_process = p;
 			page_table_base_register = curr_process->process_ptbr; //set PTBR to point to the current page table
+			return;
 
 		}	
 	}
 	cerr << "There is no process with the given pid: " << pid << endl;
 		
+}
+
+Page* find_page(unsigned page_num) {
+	Page* result;
+	for (Page* p : all_pages) {
+		if (p->page_num == page_num) {
+			result = p;
+			return result;
+		}	
+	}
+	return nullptr; //error
 }
 
 /*
@@ -124,8 +139,29 @@ void vm_switch(pid_t pid) {
  * or 0 otherwise (having handled the fault appropriately).
  */
 int vm_fault(void* addr, bool write_flag) {
-  // TODO
-  return -1;
+	
+	if ((uintptr_t) addr < (uintptr_t) VM_ARENA_BASEADDR || (uintptr_t) addr > (uintptr_t) curr_process->valid_ceiling) {	
+		return -1;
+	}
+
+	unsigned page_mask = ~(-1 >> 12);
+	unsigned page_num = (uintptr_t) addr & page_mask;
+	Page* curr_page = find_page(page_num);
+
+	if (!write_flag) { //fault occurred on read
+		//check residency
+		int page_table_index = page_num - VM_ARENA_BASEPAGE;
+		if (curr_process->process_pgtable->ptes[page_table_index].ppage != -1) {
+			curr_page->ref_bit = 1;
+			curr_process->process_pgtable->ptes[page_table_index].read_enable = 1;
+
+
+			//CHECK IF INITIALIZED
+
+		}
+	}
+
+	return -1;
 }
 
 /*
@@ -151,7 +187,7 @@ void vm_destroy() {
  */
 void* vm_extend() {
 		
-	if ((curr_process->validceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE - 1) &&
+	if ((curr_process->valid_ceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE - 1) &&
 			block_counter < blocks){ //check to make sure we haven't run out of arena or disk
 		/*
 		unsigned nextFrame = frame_counter;
@@ -178,25 +214,29 @@ void* vm_extend() {
 		total_pages++;
 		newPage->dirty_bit = 0;
 		newPage->ref_bit = 0;
-		newPage->frame = NULL;
+		newPage->frame = -1;
 		newPage->block = block_counter;
+		newPage->initialized = false;
+		newPage->resident = false;
 		
-		all_pages.push_back(new_page)
-		curr_process->pageInfo.push_back(newPage);
+		all_pages.push_back(newPage);
+		curr_process->page_info.push_back(newPage);
+
+
 
 		block_counter++; //will probably need more complexity here to write over disk entries that are no longer needed
 
-		pgTable_index = curr_process->pageInfo.size() - 1;
+		int pgTable_index = curr_process->page_info.size() - 1;
 		
-		curr_process->process_pgtable->ptes[pgTable_index] = new page_table_entry_t;
-		curr_process->process_pgtable->ptes[pgTable_index]->ppage = NULL;
-		curr_process->process_pgtable->ptes[pgTable_index]->read_enable = 0;
-		curr_process->process_pgtable->ptes[pgTable_index]->write_enable = 0;
+		//curr_process->process_pgtable->ptes[pgTable_index] = new page_table_entry_t;
+		curr_process->process_pgtable->ptes[pgTable_index].ppage = UINT_MAX;
+		curr_process->process_pgtable->ptes[pgTable_index].read_enable = 0;
+		curr_process->process_pgtable->ptes[pgTable_index].write_enable = 0;
 
-		uintptr_t return_value = VM_ARENA_BASEADDR + (VM_PAGESIZE * (curr_process->pageInfo.size() - 1)); 
+		uintptr_t return_value = (uintptr_t)VM_ARENA_BASEADDR + (VM_PAGESIZE * (curr_process->page_info.size() - 1)); 
 		
-		curr_process->validceiling = return_value; //update which virtual addresses are valid
-		return (void*) curr_process->validceiling;
+		curr_process->valid_ceiling = return_value; //update which virtual addresses are valid
+		return (void*) curr_process->valid_ceiling;
 
 	} else {
 		return nullptr;
@@ -214,27 +254,33 @@ void* vm_extend() {
 int vm_syslog(void* message, unsigned len) {
 
 	//make sure the message address is in the arena
-	if ((uintptr_t) message < VM_ARENA_BASEADDR || (uintptr_t) message > curr_process->validceiling) {
+	if ((uintptr_t) message < (uintptr_t) VM_ARENA_BASEADDR || (uintptr_t) message > curr_process->valid_ceiling) {
 		return -1;
 	}
 
-	//make sure the message address plus the length is in the arena
-	if ((uintptr_t) message + len > curr_process->validceiling || len == 0) {
+	//make sure the message address plus the length is in the arena and the length is not zero
+	if ((uintptr_t) message + len > curr_process->valid_ceiling || len == 0) {
 		return - 1;
 	}
 
 	string str;
+	unsigned page_mask = ~(-1 >> 12);
+	unsigned offset_mask = 8191;
 	while (str.length() < len) {
 		//find page number of address
-		int page_mask = ~(-1 >> 12);
-		unsigned page_num = (message >> 13) & page_mask;
-
-		if (curr_process->process_pgtable->ptes[curr_page]->read_enable == 0) {
+		unsigned page_num = ((uintptr_t) message >> 13) & page_mask;
+		int page_table_index = page_num - VM_ARENA_BASEPAGE;
+		if (curr_process->process_pgtable->ptes[page_table_index].read_enable == 0) {
 			vm_fault(message, false);
 		}
 
-		//add to string
+		unsigned offset = (uintptr_t) message & offset_mask;
+		unsigned long frame = curr_process->process_pgtable->ptes[page_table_index].ppage;
+		str += ((char*) pm_physmem)[(frame * VM_PAGESIZE) + offset + str.length()];
+
 	}
+
+	cout << "syslog \t\t\t" << str << endl;
 
 	return 0;
 
