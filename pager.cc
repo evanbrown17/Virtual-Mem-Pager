@@ -22,6 +22,7 @@ struct Page {
 	bool initialized;
 	unsigned frame; //physmem location (if any)
 	unsigned block; //disk location
+	pid_t pid; //process it belongs to
 };
 
 
@@ -31,7 +32,7 @@ struct Process {
 	page_table_t* process_pgtable;
 	uintptr_t valid_floor;
 	uintptr_t valid_ceiling;
-	list<Page*> page_info;	
+	list<Page*>* page_info;	
 };
 
 
@@ -46,7 +47,8 @@ unsigned blocks;
 unsigned block_counter;
 //unsigned framesAssigned;
 //
-int * framesAssigned;
+Page** frames_assigned;
+unsigned clock_hand;
 
 uintptr_t arena_base;
 
@@ -62,13 +64,14 @@ int total_pages;
 void vm_init(unsigned memory_pages, unsigned disk_blocks) {
 	arena_base = (uintptr_t) VM_ARENA_BASEADDR;
 	frame_counter = 0;
+	clock_hand = 0;
  	mem_pages = memory_pages;
 	blocks = disk_blocks;
 	block_counter = 0;
 	total_pages = 0;
-	framesAssigned = new int [mem_pages]; //says whether the frame is full or not
+	frames_assigned = new Page* [mem_pages]; //says whether the frame is full or not
 	for (unsigned i = 0; i < mem_pages; i++) {
-		framesAssigned[i] = 0;	
+		frames_assigned[i] = nullptr;	
 		//all frames initially empty
 
 	}
@@ -92,12 +95,23 @@ void vm_create(pid_t pid) {
 	//new_process->process_pgtable->ptes = new page_table_entry_t;
 	cerr << "New process pid is " << new_process->pid << endl;
 
+	new_process->page_info = new list<Page*>;
+
 	//Need to initialize values in actual page table?
 
 	all_processes.push_back(new_process);
 
 
 
+}
+
+Process* find_process(pid_t pid) {
+	for (Process* p : all_processes) {
+		if (p->pid == pid) {
+			return p;
+		}
+	}
+	return nullptr; //can't find process
 }
 
 /*
@@ -107,14 +121,14 @@ void vm_create(pid_t pid) {
  * given pid.
 */
 void vm_switch(pid_t pid) {
- 	for (Process* p : all_processes) {
-		if (p->pid == pid) {
-			curr_process = p;
-			page_table_base_register = curr_process->process_ptbr; //set PTBR to point to the current page table
-			return;
+	Process* next_process = find_process(pid);
+	if (next_process != nullptr) {
+ 		curr_process = next_process;
+		page_table_base_register = curr_process->process_ptbr; //set PTBR to point to the current page table
+		return;
 
-		}	
-	}
+	}	
+	
 	cerr << "There is no process with the given pid: " << pid << endl;
 		
 }
@@ -122,13 +136,95 @@ void vm_switch(pid_t pid) {
 Page* find_page(unsigned page_num) {
 	Page* result;
 	for (Page* p : all_pages) {
-		if (p->page_num == page_num) {
+		if (p->page_num == page_num && p->pid == curr_process->pid) {
 			result = p;
 			return result;
 		}	
 	}
 	return nullptr; //error
 }
+
+void advance_clock_hand() {
+	if (clock_hand == mem_pages - 1) { //clock hand is at end of list
+		clock_hand = 0;
+	} else {
+		clock_hand++;
+	}
+}
+
+void initialize_page_and_disk(Page* page, unsigned frame) {
+	//initialize memory contents to 0
+	for (unsigned i = (frame * VM_PAGESIZE); i < ((frame + 1) * VM_PAGESIZE); i++) {
+		((int*) pm_physmem)[i] = 0;
+	}
+	disk_write(page->block, frame);
+	page->initialized = true;
+}
+
+
+void page_replace(Page* incoming_page, int new_pg_table_index) {
+
+	while (true){
+	
+		if (frames_assigned[clock_hand] == nullptr) {
+
+			frames_assigned[clock_hand] = incoming_page;
+			if (incoming_page->initialized) {
+				disk_read(incoming_page->block, clock_hand);
+			} else {
+				initialize_page_and_disk(incoming_page, clock_hand);
+			}
+			incoming_page->resident = true;
+			incoming_page->ref_bit = 1;
+			incoming_page->frame = clock_hand;
+			curr_process->process_pgtable->ptes[new_pg_table_index].ppage = clock_hand;
+			curr_process->process_pgtable->ptes[new_pg_table_index].read_enable = 1;
+			advance_clock_hand();
+			break;
+
+		} else if (frames_assigned[clock_hand]->ref_bit == 1) {
+
+			frames_assigned[clock_hand]->ref_bit = 0;
+			advance_clock_hand();
+
+		} else if (frames_assigned[clock_hand]->ref_bit == 0) {
+			//evict this page
+			if (frames_assigned[clock_hand]->dirty_bit == 1) {
+				unsigned write_block = frames_assigned[clock_hand]->block;
+				unsigned frame = (unsigned) clock_hand;
+				disk_write(write_block, frame);
+			} 
+
+			int old_pg_table_index = frames_assigned[clock_hand]->page_num - VM_ARENA_BASEPAGE;
+			Process* evicted_process = find_process(frames_assigned[clock_hand]->pid);
+			frames_assigned[clock_hand]->dirty_bit = 0;
+			frames_assigned[clock_hand]->resident = false;
+			frames_assigned[clock_hand]->frame = -1;
+			evicted_process->process_pgtable->ptes[old_pg_table_index].ppage = UINT_MAX;
+			evicted_process->process_pgtable->ptes[old_pg_table_index].read_enable = 0;
+			evicted_process->process_pgtable->ptes[old_pg_table_index].write_enable = 0;
+
+			frames_assigned[clock_hand] = incoming_page;
+			if (incoming_page->initialized) {
+				disk_read(incoming_page->block, (unsigned) clock_hand);
+			} else {
+				initialize_page_and_disk(incoming_page, clock_hand);
+			}	
+			incoming_page->resident = true;
+			incoming_page->ref_bit = 1;
+			incoming_page->frame = clock_hand;
+			curr_process->process_pgtable->ptes[new_pg_table_index].ppage = clock_hand;
+			curr_process->process_pgtable->ptes[new_pg_table_index].read_enable = 1;
+			advance_clock_hand();
+			break;
+
+		}
+
+
+	}
+
+}
+
 
 /*
  * vm_fault
@@ -140,28 +236,53 @@ Page* find_page(unsigned page_num) {
  */
 int vm_fault(void* addr, bool write_flag) {
 	
-	if ((uintptr_t) addr < (uintptr_t) VM_ARENA_BASEADDR || (uintptr_t) addr > (uintptr_t) curr_process->valid_ceiling) {	
+	if ((uintptr_t) addr < (uintptr_t) VM_ARENA_BASEADDR || (uintptr_t) addr > curr_process->valid_ceiling) {	
 		return -1;
 	}
 
 	unsigned page_mask = ~(-1 >> 12);
 	unsigned page_num = (uintptr_t) addr & page_mask;
 	Page* curr_page = find_page(page_num);
+	int page_table_index = page_num - VM_ARENA_BASEPAGE;
 
+/*
 	if (!write_flag) { //fault occurred on read
 		//check residency
-		int page_table_index = page_num - VM_ARENA_BASEPAGE;
-		if (curr_process->process_pgtable->ptes[page_table_index].ppage != -1) {
+		if (curr_process->process_pgtable->ptes[page_table_index].ppage != UINT_MAX) {
+			//resident
 			curr_page->ref_bit = 1;
 			curr_process->process_pgtable->ptes[page_table_index].read_enable = 1;
 
-
-			//CHECK IF INITIALIZED
-
+		} else {
+			//non-resident
+			page_replace(curr_page, page_table_index);
 		}
+	} else { //fault occurred on write
+		if (curr_process->process_pgtable->ptes[page_table_index].ppage != UINT_MAX) {
+			curr_page->ref_bit = 1;
+			curr_page->dirty_bit = 1;
+			curr_process->process_pgtable->ptes[page_table_index].write_enable = 1;
+		} else {
+			page_replace(curr_page, page_table_index);
+		}
+	
+	}
+	*/
+
+	if (curr_process->process_pgtable->ptes[page_table_index].ppage != UINT_MAX) {
+		curr_page->ref_bit = 1;
+		if (!write_flag){
+			curr_process->process_pgtable->ptes[page_table_index].read_enable = 1;
+		} else {
+			curr_page->dirty_bit = 1;
+			curr_process->process_pgtable->ptes[page_table_index].write_enable = 1;
+		}	
+	
+	} else {
+		page_replace(curr_page, page_table_index);
 	}
 
-	return -1;
+	return 0;
 }
 
 /*
@@ -187,7 +308,7 @@ void vm_destroy() {
  */
 void* vm_extend() {
 		
-	if ((curr_process->valid_ceiling != (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE - 1) &&
+	if ((curr_process->valid_ceiling < (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE - 1) &&
 			block_counter < blocks){ //check to make sure we haven't run out of arena or disk
 		/*
 		unsigned nextFrame = frame_counter;
@@ -218,25 +339,26 @@ void* vm_extend() {
 		newPage->block = block_counter;
 		newPage->initialized = false;
 		newPage->resident = false;
+		newPage->pid = curr_process->pid;
 		
 		all_pages.push_back(newPage);
-		curr_process->page_info.push_back(newPage);
+		curr_process->page_info->push_back(newPage);
 
-
+		//delay disk initialization to the first time the page is accessed
 
 		block_counter++; //will probably need more complexity here to write over disk entries that are no longer needed
 
-		int pgTable_index = curr_process->page_info.size() - 1;
+		int pgTable_index = newPage->page_num - VM_ARENA_BASEPAGE;
 		
 		//curr_process->process_pgtable->ptes[pgTable_index] = new page_table_entry_t;
 		curr_process->process_pgtable->ptes[pgTable_index].ppage = UINT_MAX;
 		curr_process->process_pgtable->ptes[pgTable_index].read_enable = 0;
 		curr_process->process_pgtable->ptes[pgTable_index].write_enable = 0;
 
-		uintptr_t return_value = (uintptr_t)VM_ARENA_BASEADDR + (VM_PAGESIZE * (curr_process->page_info.size() - 1)); 
+		uintptr_t return_value = (uintptr_t)VM_ARENA_BASEADDR + (VM_PAGESIZE * (curr_process->page_info->size() - 1)); 
 		
-		curr_process->valid_ceiling = return_value; //update which virtual addresses are valid
-		return (void*) curr_process->valid_ceiling;
+		curr_process->valid_ceiling = return_value + VM_PAGESIZE - 1; //update which virtual addresses are valid
+		return (void*) return_value;
 
 	} else {
 		return nullptr;
@@ -263,7 +385,7 @@ int vm_syslog(void* message, unsigned len) {
 		return - 1;
 	}
 
-	string str;
+	string str = "";
 	unsigned page_mask = ~(-1 >> 12);
 	unsigned offset_mask = 8191;
 	while (str.length() < len) {
