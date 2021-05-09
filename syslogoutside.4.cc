@@ -5,12 +5,12 @@
 int main() {
     char* p;
     p = (char*) vm_extend(); // p is an address in the arena
-    p[0] = 'h';
-    p[1] = 'e';
-    p[2] = 'l';
-    p[3] = 'l';
-    p[4] = 'o';
-    vm_syslog(p, 5); // pager logs "hello"
+    p[8190] = 'h';
+    p[8191] = 'e';
+    p[8192] = 'l';
+    p[8193] = 'l';
+    p[8194] = 'o';
+    vm_syslog(p + 8190, 5); // pager logs "hello"
     return 0;
 }
 

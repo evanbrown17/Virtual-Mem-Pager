@@ -10,7 +10,7 @@ int main() {
     p[2] = 'l';
     p[3] = 'l';
     p[4] = 'o';
-    vm_syslog(p, 5); // pager logs "hello"
+    vm_syslog(p, 0); // pager logs "hello"
     return 0;
 }
 

@@ -10,6 +10,7 @@
 #include <deque>
 #include <string>
 #include <climits>
+#include <set>
 
 
 using namespace std;
@@ -40,6 +41,8 @@ list<Process*> all_processes;
 Process* curr_process;
 
 list<Page*> all_pages;
+
+set<unsigned> taken_disk_blocks;
 
 unsigned mem_pages;
 unsigned frame_counter;
@@ -121,6 +124,7 @@ Process* find_process(pid_t pid) {
  * given pid.
 */
 void vm_switch(pid_t pid) {
+	cerr << "Switch called with pid " << pid << endl;
 	Process* next_process = find_process(pid);
 	if (next_process != nullptr) {
  		curr_process = next_process;
@@ -155,17 +159,20 @@ void advance_clock_hand() {
 void initialize_page_and_disk(Page* page, unsigned frame) {
 	//initialize memory contents to 0
 	for (unsigned i = (frame * VM_PAGESIZE); i < ((frame + 1) * VM_PAGESIZE); i++) {
-		((int*) pm_physmem)[i] = 0;
+		((char*) pm_physmem)[i] = (char) 0;
 	}
 	disk_write(page->block, frame);
 	page->initialized = true;
 }
 
 
-void page_replace(Page* incoming_page, int new_pg_table_index) {
+void page_replace(Page* incoming_page, int new_pg_table_index, bool write) {
+
+	cerr << "page replace was called with page number " << incoming_page->page_num << endl;
 
 	while (true){
 	
+		/*
 		if (frames_assigned[clock_hand] == nullptr) {
 
 			frames_assigned[clock_hand] = incoming_page;
@@ -173,16 +180,23 @@ void page_replace(Page* incoming_page, int new_pg_table_index) {
 				disk_read(incoming_page->block, clock_hand);
 			} else {
 				initialize_page_and_disk(incoming_page, clock_hand);
+				cerr << "INITIALIZED PAGE\n";
 			}
 			incoming_page->resident = true;
 			incoming_page->ref_bit = 1;
 			incoming_page->frame = clock_hand;
+			cerr << "new frame is " << clock_hand << endl;
 			curr_process->process_pgtable->ptes[new_pg_table_index].ppage = clock_hand;
 			curr_process->process_pgtable->ptes[new_pg_table_index].read_enable = 1;
+			if (write) {
+				incoming_page->dirty_bit = 1;
+				curr_process->process_pgtable->ptes[new_pg_table_index].write_enable = 1;
+			}
 			advance_clock_hand();
 			break;
+		*/
 
-		} else if (frames_assigned[clock_hand]->ref_bit == 1) {
+		if (frames_assigned[clock_hand]->ref_bit == 1) {
 
 			frames_assigned[clock_hand]->ref_bit = 0;
 			advance_clock_hand();
@@ -215,6 +229,11 @@ void page_replace(Page* incoming_page, int new_pg_table_index) {
 			incoming_page->frame = clock_hand;
 			curr_process->process_pgtable->ptes[new_pg_table_index].ppage = clock_hand;
 			curr_process->process_pgtable->ptes[new_pg_table_index].read_enable = 1;
+			if (write) {
+				incoming_page->dirty_bit = 1;
+				curr_process->process_pgtable->ptes[new_pg_table_index].write_enable = 1;
+			}
+
 			advance_clock_hand();
 			break;
 
@@ -223,6 +242,39 @@ void page_replace(Page* incoming_page, int new_pg_table_index) {
 
 	}
 
+}
+
+void load_into_memory(Page* incoming_page, unsigned new_pg_table_index, bool write) {
+
+	for (unsigned i = 0; i < mem_pages; i++) {
+		if (frames_assigned[i] == nullptr) {
+			frames_assigned[i] = incoming_page;
+			if (incoming_page->initialized) {
+				disk_read(incoming_page->block, i);
+			} else {
+				initialize_page_and_disk(incoming_page, i);
+				cerr << "INITIALIZED PAGE\n";
+			}
+			incoming_page->resident = true;
+			incoming_page->ref_bit = 1;
+			incoming_page->frame = i;
+			cerr << "new frame is " << i << endl;
+			curr_process->process_pgtable->ptes[new_pg_table_index].ppage = i;
+			curr_process->process_pgtable->ptes[new_pg_table_index].read_enable = 1;
+			if (write) {
+				incoming_page->dirty_bit = 1;
+				curr_process->process_pgtable->ptes[new_pg_table_index].write_enable = 1;
+			}
+
+			return;
+
+		}
+
+	}
+
+	//no free frames, so run clock algorithm
+	page_replace(incoming_page, new_pg_table_index, write);
+	
 }
 
 
@@ -240,10 +292,12 @@ int vm_fault(void* addr, bool write_flag) {
 		return -1;
 	}
 
-	unsigned page_mask = ~(-1 >> 12);
-	unsigned page_num = (uintptr_t) addr & page_mask;
+	unsigned long long page_mask = 0x7ffffffffffff;
+	unsigned page_num = ((uintptr_t) addr >> 13) & page_mask;
 	Page* curr_page = find_page(page_num);
-	int page_table_index = page_num - VM_ARENA_BASEPAGE;
+	cerr << "current page page num is " << curr_page->page_num << " and current page pid is " << curr_page->pid << endl;
+	unsigned page_table_index = page_num - VM_ARENA_BASEPAGE;
+
 
 /*
 	if (!write_flag) { //fault occurred on read
@@ -270,6 +324,7 @@ int vm_fault(void* addr, bool write_flag) {
 	*/
 
 	if (curr_process->process_pgtable->ptes[page_table_index].ppage != UINT_MAX) {
+		cerr << "ppage is " << curr_process->process_pgtable->ptes[page_table_index].ppage << endl;
 		curr_page->ref_bit = 1;
 		if (!write_flag){
 			curr_process->process_pgtable->ptes[page_table_index].read_enable = 1;
@@ -279,7 +334,8 @@ int vm_fault(void* addr, bool write_flag) {
 		}	
 	
 	} else {
-		page_replace(curr_page, page_table_index);
+		load_into_memory(curr_page, page_table_index, write_flag);
+		//page_replace(curr_page, page_table_index, write_flag);
 	}
 
 	return 0;
@@ -291,8 +347,32 @@ int vm_fault(void* addr, bool write_flag) {
  * Notifies the pager that the current process has exited and should be
  * deallocated.
  */
-void vm_destroy() {
-  // TODO
+void vm_destroy() {        
+
+	for (Page* p : *curr_process->page_info) {
+		taken_disk_blocks.erase(p->block);
+		if (p->resident) {
+			unsigned page_table_index = p->page_num - VM_ARENA_BASEPAGE;
+			unsigned long frame = curr_process->process_pgtable->ptes[page_table_index].ppage;
+			frames_assigned[frame] = nullptr; //take resident page out of memory
+		}
+		all_pages.remove(p);
+		delete p;
+	}
+	delete curr_process->page_info;
+
+
+	//delete curr_process->process_pgtable;
+	
+
+	curr_process->process_ptbr = NULL;
+	page_table_base_register = NULL;
+
+	all_processes.remove(curr_process);
+
+	delete curr_process;
+	curr_process = NULL;	
+
 }
 
 /*
@@ -307,9 +387,11 @@ void vm_destroy() {
  * view to the application. Returns null if the new page cannot be allocated.
  */
 void* vm_extend() {
+
+	cerr << "Extend called.\n";
 		
 	if ((curr_process->valid_ceiling < (uintptr_t) VM_ARENA_BASEADDR + (uintptr_t)VM_ARENA_SIZE - 1) &&
-			block_counter < blocks){ //check to make sure we haven't run out of arena or disk
+			taken_disk_blocks.size() < blocks){ //check to make sure we haven't run out of arena or disk
 		/*
 		unsigned nextFrame = frame_counter;
 		frame_counter++;
@@ -331,12 +413,20 @@ void* vm_extend() {
 		//I think we can just put it on the disk and not in memory when it is created?
 	
 		Page* newPage = new Page;
-		newPage->page_num = VM_ARENA_BASEPAGE + total_pages;
-		total_pages++;
+		newPage->page_num = VM_ARENA_BASEPAGE + curr_process->page_info->size();
+		//total_pages++;
 		newPage->dirty_bit = 0;
 		newPage->ref_bit = 0;
 		newPage->frame = -1;
-		newPage->block = block_counter;
+		unsigned potential_block = 0;
+		while (potential_block < blocks) {
+			if (taken_disk_blocks.find(potential_block) == taken_disk_blocks.end()) {
+				newPage->block = potential_block;
+				taken_disk_blocks.insert(potential_block);
+				break;
+			}
+			potential_block++;
+		}
 		newPage->initialized = false;
 		newPage->resident = false;
 		newPage->pid = curr_process->pid;
@@ -381,12 +471,13 @@ int vm_syslog(void* message, unsigned len) {
 	}
 
 	//make sure the message address plus the length is in the arena and the length is not zero
+	
 	if ((uintptr_t) message + len > curr_process->valid_ceiling || len == 0) {
 		return - 1;
 	}
 
 	string str = "";
-	unsigned page_mask = ~(-1 >> 12);
+	unsigned long long page_mask = 0x7ffffffffffff;
 	unsigned offset_mask = 8191;
 	while (str.length() < len) {
 		//find page number of address
