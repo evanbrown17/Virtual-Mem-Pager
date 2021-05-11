@@ -37,25 +37,25 @@ struct Process {
 };
 
 
-list<Process*> all_processes;
-Process* curr_process;
+static list<Process*> all_processes;
+static Process* curr_process;
 
-list<Page*> all_pages;
+static list<Page*> all_pages;
 
-set<unsigned> taken_disk_blocks;
+static set<unsigned> taken_disk_blocks;
 
-unsigned mem_pages;
-unsigned frame_counter;
-unsigned blocks;
-unsigned block_counter;
+static unsigned mem_pages;
+static unsigned frame_counter;
+static unsigned blocks;
+static unsigned block_counter;
 //unsigned framesAssigned;
 //
-Page** frames_assigned;
-unsigned clock_hand;
+static Page** frames_assigned;
+static unsigned clock_hand;
 
-uintptr_t arena_base;
+static uintptr_t arena_base;
 
-int total_pages;
+static int total_pages;
 
 /*
  * vm_init
@@ -137,7 +137,7 @@ void vm_switch(pid_t pid) {
 		
 }
 
-Page* find_page(unsigned page_num) {
+static Page* find_page(unsigned page_num) {
 	Page* result;
 	for (Page* p : all_pages) {
 		if (p->page_num == page_num && p->pid == curr_process->pid) {
@@ -148,7 +148,7 @@ Page* find_page(unsigned page_num) {
 	return nullptr; //error
 }
 
-void advance_clock_hand() {
+static void advance_clock_hand() {
 	if (clock_hand == mem_pages - 1) { //clock hand is at end of list
 		clock_hand = 0;
 	} else {
@@ -156,17 +156,17 @@ void advance_clock_hand() {
 	}
 }
 
-void initialize_page_and_disk(Page* page, unsigned frame) {
+static void initialize_page(Page* page, unsigned frame) {
 	//initialize memory contents to 0
 	for (unsigned i = (frame * VM_PAGESIZE); i < ((frame + 1) * VM_PAGESIZE); i++) {
 		((char*) pm_physmem)[i] = (char) 0;
 	}
-	disk_write(page->block, frame);
+	//disk_write(page->block, frame);
 	page->initialized = true;
 }
 
 
-void page_replace(Page* incoming_page, int new_pg_table_index, bool write) {
+static void page_replace(Page* incoming_page, int new_pg_table_index, bool write) {
 
 	cerr << "page replace was called with page number " << incoming_page->page_num << endl;
 
@@ -222,7 +222,7 @@ void page_replace(Page* incoming_page, int new_pg_table_index, bool write) {
 			if (incoming_page->initialized) {
 				disk_read(incoming_page->block, (unsigned) clock_hand);
 			} else {
-				initialize_page_and_disk(incoming_page, clock_hand);
+				initialize_page(incoming_page, clock_hand);
 			}	
 			incoming_page->resident = true;
 			incoming_page->ref_bit = 1;
@@ -244,7 +244,7 @@ void page_replace(Page* incoming_page, int new_pg_table_index, bool write) {
 
 }
 
-void load_into_memory(Page* incoming_page, unsigned new_pg_table_index, bool write) {
+static void load_into_memory(Page* incoming_page, unsigned new_pg_table_index, bool write) {
 
 	for (unsigned i = 0; i < mem_pages; i++) {
 		if (frames_assigned[i] == nullptr) {
@@ -252,7 +252,7 @@ void load_into_memory(Page* incoming_page, unsigned new_pg_table_index, bool wri
 			if (incoming_page->initialized) {
 				disk_read(incoming_page->block, i);
 			} else {
-				initialize_page_and_disk(incoming_page, i);
+				initialize_page(incoming_page, i);
 				cerr << "INITIALIZED PAGE\n";
 			}
 			incoming_page->resident = true;
@@ -359,11 +359,10 @@ void vm_destroy() {
 		all_pages.remove(p);
 		delete p;
 	}
+	
 	delete curr_process->page_info;
 
-
 	//delete curr_process->process_pgtable;
-	
 
 	curr_process->process_ptbr = NULL;
 	page_table_base_register = NULL;
