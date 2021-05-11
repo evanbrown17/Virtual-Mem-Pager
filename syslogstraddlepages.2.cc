@@ -1,9 +1,6 @@
 // sample.cc - a sample application program that uses the external pager
 
 #include "vm_app.h"
-#include <iostream>
-
-using namespace std;
 
 int main() {
     char* p;
@@ -19,6 +16,8 @@ int main() {
     p[4] = 'o';
     vm_syslog(p, 5); // pager logs "hello"
 
+    vm_yield();
+
     q[0] = 'a';
     q[1] = 'n';
     q[2] = 'd';
@@ -30,11 +29,16 @@ int main() {
     r[3] = 'd';
     r[4] = 'b';
     r[5] = 'y';
-    r[5] = 'e';
+    r[6] = 'e';
     vm_syslog(r, 7);
 
-    char c = q[0]; // forces a disk read because this one gets evicted
+    //bring p's page back in memory
+    char c = p[0];
     c++;
+
+    p[8190] = 'X';
+    p[8191] = 'Y';
+    vm_syslog(p + 8190, 5); //should log 'XYand' and cause a fault after XY
     return 0;
 }
 
