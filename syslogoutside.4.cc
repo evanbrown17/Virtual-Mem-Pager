@@ -11,6 +11,11 @@ int main() {
     //p[8193] = 'l';
     //p[8194] = 'o';
     vm_syslog(p + 8190, 5); // invalid length
+
+    char* q = (char*) vm_extend();
+    vm_syslog(p + 8190, 5);
+
+    q[0] = 'x';
     return 0;
 }
 

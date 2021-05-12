@@ -185,7 +185,7 @@ static void advance_clock_hand() {
 static void initialize_page(Page* page, unsigned frame) {
 	//initialize memory contents to 0
 	for (unsigned i = (frame * VM_PAGESIZE); i < ((frame + 1) * VM_PAGESIZE); i++) {
-		((char*) pm_physmem)[i] = (char) 0;
+		((char*) pm_physmem)[i] = 0;
 	}
 	//disk_write(page->block, frame);
 	page->initialized = true;
@@ -429,6 +429,10 @@ void vm_destroy() {
 
 	delete curr_process;
 	curr_process = NULL;
+
+	if (all_processes.empty()) {
+		clock_hand = 0; //move position of clock hand back to beginning of queue
+	}
 
 }
 
