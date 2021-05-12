@@ -32,6 +32,7 @@ struct Process {
 	pid_t pid;
 	page_table_t* process_ptbr;
 	page_table_t* process_pgtable;
+	page_table_entry_t* pte_ptr;
 	uintptr_t valid_floor;
 	uintptr_t valid_ceiling;
 	list<Page*>* page_info;	
@@ -94,21 +95,23 @@ void vm_create(pid_t pid) {
 	Process* new_process = new Process;
 	new_process->pid = pid;
 	new_process->valid_floor = (uintptr_t) VM_ARENA_BASEADDR;
-	new_process->valid_ceiling = (uintptr_t) VM_ARENA_BASEADDR;
+	new_process->valid_ceiling = (uintptr_t) VM_ARENA_BASEADDR - 1;
 
 	new_process->process_pgtable = new page_table_t;
+	new_process->pte_ptr = new_process->process_pgtable->ptes;
+	//new_process->pte_ptr = new page_table_entry_t [VM_ARENA_SIZE / VM_PAGESIZE];
+
 	//new_process->process_pgtable->ptes = new page_table_entry_t[VM_ARENA_SIZE / VM_PAGESIZE];
 	//new_process->process_pgtable->ptes [VM_ARENA_SIZE / VM_PAGESIZE] = *(new page_table_entry_t [VM_ARENA_SIZE / VM_PAGESIZE]);
 	//new_process->process_pgtable->ptes = new page_table_entry_t;
 	//
-	/*	
-	for (int i = 0; i < 65536; i++) {
-		curr_process->process_pgtable->ptes[i].ppage = 0;
-		curr_process->process_pgtable->ptes[i].read_enable = 0;
-		curr_process->process_pgtable->ptes[i].write_enable = 0;
-		cerr << "Done\n";
+		
+	for (int i = 0; i < (VM_ARENA_SIZE / VM_PAGESIZE); i++) {
+		new_process->pte_ptr[i].ppage = 0;
+		new_process->pte_ptr[i].read_enable = 0;
+		new_process->pte_ptr[i].write_enable = 0;
 	}
-	*/
+	
 
 	//cerr << "First pte.ppage is " << new_process->process_pgtable->ptes[0].ppage << endl;
 	
@@ -409,7 +412,8 @@ void vm_destroy() {
 	}
 	
 	delete curr_process->page_info;
-//	delete curr_process->process_pgtable;
+	//delete curr_process->pte_ptr;
+	delete curr_process->process_pgtable;
 
 	//delete page_table_base_register;
 	//page_table_base_register = NULL;

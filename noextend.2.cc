@@ -1,12 +1,16 @@
 // sample.cc - a sample application program that uses the external pager
 
 #include "vm_app.h"
+#include <iostream>
+
+using namespace std;
 
 int main() {
     char* p;
     char* q;
     char* r;
-    p = (char*) vm_extend(); // p is an address in the arena
+    p = (char*) 0x60000000; // p is an address in the arena
+    p[0] = 'x';
     q = (char*) vm_extend();
     r = (char*) vm_extend();
     p[0] = 'h';
@@ -15,13 +19,6 @@ int main() {
     p[3] = 'l';
     p[4] = 'o';
     vm_syslog(p, 5); // pager logs "hello"
-
-    p[0] = 'p';
-    p[1] = 'a';
-    p[2] = 'g';
-    p[3] = 'e';
-    p[4] = 'r';
-    vm_syslog(p, 5);
 
     q[0] = 'a';
     q[1] = 'n';
@@ -37,17 +34,8 @@ int main() {
     r[5] = 'e';
     vm_syslog(r, 7);
 
-    vm_syslog(p, 5);
-
-    p[0] = 'h';
-    p[1] = 'i';
-    p[2] = ' ';
-    p[3] = 'a';
-    p[4] = 'g';
-    p[5] = 'a';
-    p[6] = 'i';
-    p[7] = 'n';
-    vm_syslog(p, 8); 
+    char c = q[0]; // forces a disk read because this one gets evicted
+    c++;
     return 0;
 }
 
