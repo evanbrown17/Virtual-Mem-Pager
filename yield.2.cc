@@ -8,6 +8,7 @@ int main() {
     char* r;
     p = (char*) vm_extend(); // p is an address in the arena
     char x = p[0];
+    vm_syslog(p, 8192);
     x++;
     q = (char*) vm_extend();
     vm_yield();

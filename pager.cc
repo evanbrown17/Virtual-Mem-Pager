@@ -74,13 +74,14 @@ void vm_init(unsigned memory_pages, unsigned disk_blocks) {
 	blocks = disk_blocks;
 	block_counter = 0;
 	total_pages = 0;
+	/*
 	frames_assigned = new Page* [mem_pages]; //says whether the frame is full or not
 	for (unsigned i = 0; i < mem_pages; i++) {
 		frames_assigned[i] = nullptr;	
 		//all frames initially empty
 
 	}
-
+	*/
 	page_table_base_register = nullptr;
 }
 
@@ -115,7 +116,6 @@ void vm_create(pid_t pid) {
 
 	//cerr << "First pte.ppage is " << new_process->process_pgtable->ptes[0].ppage << endl;
 	
-
 	new_process->process_ptbr = new_process->process_pgtable;
 
 	//new_process->process_pgtable->ptes = new page_table_entry_t;
@@ -126,6 +126,15 @@ void vm_create(pid_t pid) {
 	//Need to initialize values in actual page table?
 
 	all_processes.push_back(new_process);
+
+	if (all_processes.size() == 1) { //if this process is the only one
+		frames_assigned = new Page* [mem_pages];
+		for (unsigned i = 0; i < mem_pages; i++) {
+			frames_assigned[i] = nullptr;	
+			//all frames initially empty
+		}
+
+	}
 
 
 }
@@ -432,6 +441,7 @@ void vm_destroy() {
 
 	if (all_processes.empty()) {
 		clock_hand = 0; //move position of clock hand back to beginning of queue
+		delete[] frames_assigned;
 	}
 
 }
@@ -535,7 +545,7 @@ int vm_syslog(void* message, unsigned len) {
 
 	//make sure the message address plus the length is in the arena and the length is not zero
 	
-	if ((uintptr_t) message + len > curr_process->valid_ceiling || len == 0) {
+	if (((uintptr_t) message + len - 1) > curr_process->valid_ceiling || len == 0) {
 		return - 1;
 	}
 
