@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// syslogoutside.4.cc - Attempts to syslog invalid parts of memory
 
 #include "vm_app.h"
 

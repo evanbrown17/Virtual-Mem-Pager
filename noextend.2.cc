@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// vim noextend.2.cc - We assign a virtual address manually without calling extend
 
 #include "vm_app.h"
 #include <iostream>

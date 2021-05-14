@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// pagereplace.2.cc - Forces page replacement
 
 #include "vm_app.h"
 

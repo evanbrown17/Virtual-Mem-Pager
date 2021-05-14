@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// notdirty.2.cc - evicts a page, but should not write as the page is not dirty
 
 #include "vm_app.h"
 #include <iostream>

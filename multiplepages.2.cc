@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// multiplepages.2.cc - has 3 pages assigned to it
 
 #include "vm_app.h"
 

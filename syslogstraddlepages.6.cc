@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// syslogstraddlepages.6.cc - calls a syslog that straddles two different pages
 
 #include "vm_app.h"
 

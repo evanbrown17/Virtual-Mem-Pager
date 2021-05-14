@@ -1,5 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
-
+// readfirst.2.cc --syslog without writing anything to a page 
 #include "vm_app.h"
 
 int main() {

@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// reread.2.cc - forces a disk read
 
 #include "vm_app.h"
 #include <iostream>

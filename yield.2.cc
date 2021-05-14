@@ -1,4 +1,5 @@
-// sample.cc - a sample application program that uses the external pager
+// yield.2.cc-calls vm_yield throughout the process of dealing with faults
+// to expose any bugs related to process switching
 
 #include "vm_app.h"
 
@@ -12,7 +13,7 @@ int main() {
     x++;
     q = (char*) vm_extend();
     vm_yield();
-    r = (char*) vm_extend();
+    r = (char*) vm_extend(); //p's page is evicted
     p[0] = 'h';
     p[1] = 'e';
     p[2] = 'l';

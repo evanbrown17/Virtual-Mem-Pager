@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// nonrezsyslog.cc - syslogs unassigned memory space
 
 #include "vm_app.h"
 

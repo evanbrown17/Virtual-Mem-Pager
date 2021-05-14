@@ -1,4 +1,4 @@
-// sample.cc - a sample application program that uses the external pager
+// nonrezwrite.4.cc - Invalid pointer to the memory array which we are writing to
 
 #include "vm_app.h"
 
